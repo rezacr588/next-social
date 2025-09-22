@@ -1,0 +1,70 @@
+import { requireAuth } from '../../../middleware/auth.js';
+import { validationMiddleware } from '../../../middleware/validation.js';
+import { asyncHandler } from '../../../middleware/security.js';
+import { rateLimit } from '../../../middleware/rateLimit.js';
+import { postsService } from '../../../services/postsService.js';
+import { auditLogger } from '../../../middleware/logging.js';
+
+const reportValidation = {
+  reason: { required: true, maxLength: 100 },
+  description: { maxLength: 500 },
+};
+
+const handler = async (req, res) => {
+  const { id } = req.query;
+  const postId = parseInt(id);
+  const userId = req.user.id;
+
+  if (req.method === 'POST') {
+    // Report post
+    try {
+      const { reason, description } = req.body;
+
+      await postsService.report(userId, postId, reason, description);
+      
+      auditLogger('POST_REPORTED', userId, { 
+        postId, 
+        reason,
+        description: description?.substring(0, 100) 
+      });
+      
+      res.json({ message: 'Post reported successfully' });
+    } catch (error) {
+      if (error.message === 'Post not found') {
+        return res.status(404).json({ error: 'Post not found' });
+      }
+      if (error.message === 'Already reported') {
+        return res.status(400).json({ error: 'Post already reported' });
+      }
+      
+      console.error('Error reporting post:', error);
+      res.status(500).json({ error: 'Failed to report post' });
+    }
+  } else if (req.method === 'GET') {
+    // Get post reports (admin only)
+    if (!req.user.isAdmin) {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    try {
+      const reports = await postsService.getReports(postId);
+      res.json({ reports });
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      res.status(500).json({ error: 'Failed to fetch reports' });
+    }
+  } else {
+    res.setHeader('Allow', ['POST', 'GET']);
+    res.status(405).json({ error: 'Method not allowed' });
+  }
+};
+
+export default rateLimit()(
+  asyncHandler(async (req, res, next) => {
+    if (req.method === 'POST') {
+      return requireAuth(validationMiddleware(reportValidation)(handler))(req, res, next);
+    } else {
+      return requireAuth(handler)(req, res, next);
+    }
+  })
+);

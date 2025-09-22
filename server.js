@@ -19,7 +19,7 @@ app.prepare().then(() => {
     req.io = io;
   });
 
-  const PORT = process.env.PORT || 3000;
+  const PORT = process.env.PORT || 3005;
   server.listen(PORT, (err) => {
     if (err) throw err;
     console.log(`> Ready on http://localhost:${PORT}`);

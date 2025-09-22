@@ -5,37 +5,22 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { page = 1, limit = 10 } = req.query;
-  const offset = (page - 1) * limit;
+  // Accept either page/limit or cursor style later; for now simple page.
+  let { page = '1', limit = '10' } = req.query;
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
+  const offset = (pageNum - 1) * limitNum;
 
   try {
-    // Mock feed data for testing
-    const mockPosts = [
-      {
-        id: '1',
-        user_id: 1,
-        content: 'Welcome to Nexus! This is our first test post.',
-        username: 'Nexus Team',
-        media_url: null,
-        media_type: 'text',
-        created_at: new Date().toISOString(),
-        like_count: 5,
-        share_count: 2
-      },
-      {
-        id: '2',
-        user_id: 1,
-        content: 'Check out our amazing features!',
-        username: 'Nexus Team',
-        media_url: null,
-        media_type: 'text',
-        created_at: new Date(Date.now() - 3600000).toISOString(),
-        like_count: 3,
-        share_count: 1
-      }
-    ];
-
-    res.status(200).json(mockPosts);
+    const rows = await query(
+      `SELECT p.id, p.user_id, p.content, p.media_url, p.media_type, p.created_at, p.like_count, p.share_count, u.username
+       FROM posts p
+       JOIN users u ON u.id = p.user_id
+       ORDER BY p.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [limitNum, offset]
+    );
+    res.status(200).json(rows);
   } catch (error) {
     console.error('Fetch feed error:', error);
     res.status(500).json({ error: 'Internal server error' });

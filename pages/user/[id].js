@@ -12,41 +12,57 @@ const UserProfilePage = () => {
 
   useEffect(() => {
     if (id) {
-      // Mock user data
-      const mockUser = {
-        id,
-        username: `User ${id}`,
-        email: `user${id}@example.com`,
-        bio: `This is the profile of User ${id}. Welcome to my corner of the internet!`,
-        avatar: null,
-        joinedAt: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString()
-      };
-
-      // Mock user posts
-      const mockPosts = [
-        {
-          id: '1',
-          content: `Hello everyone! This is my first post as User ${id}.`,
-          username: `User ${id}`,
-          created_at: new Date(Date.now() - 3600000).toISOString(),
-          like_count: Math.floor(Math.random() * 10),
-          share_count: Math.floor(Math.random() * 5)
-        },
-        {
-          id: '2',
-          content: `Sharing some thoughts about the future of social media.`,
-          username: `User ${id}`,
-          created_at: new Date(Date.now() - 7200000).toISOString(),
-          like_count: Math.floor(Math.random() * 15),
-          share_count: Math.floor(Math.random() * 3)
-        }
-      ];
-
-      setUser(mockUser);
-      setUserPosts(mockPosts);
-      setLoading(false);
+      fetchUserData();
     }
   }, [id]);
+
+  const fetchUserData = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch user profile
+      const userResponse = await fetch(`/api/users/${id}`);
+      if (userResponse.ok) {
+        const userData = await userResponse.json();
+        setUser(userData);
+      } else {
+        // Fallback to mock data if API doesn't exist yet
+        const mockUser = {
+          id,
+          username: `User ${id}`,
+          email: `user${id}@example.com`,
+          bio: `This is the profile of User ${id}. Welcome to my corner of the internet!`,
+          avatar: null,
+          joinedAt: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString()
+        };
+        setUser(mockUser);
+      }
+
+      // Fetch user posts
+      const postsResponse = await fetch(`/api/users/${id}/posts`);
+      if (postsResponse.ok) {
+        const postsData = await postsResponse.json();
+        setUserPosts(postsData);
+      } else {
+        // Fallback to mock posts
+        const mockPosts = [
+          {
+            id: '1',
+            content: `Hello everyone! This is my first post as User ${id}.`,
+            username: `User ${id}`,
+            created_at: new Date(Date.now() - 3600000).toISOString(),
+            like_count: Math.floor(Math.random() * 10),
+            share_count: Math.floor(Math.random() * 5)
+          }
+        ];
+        setUserPosts(mockPosts);
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleFollow = (userId) => {
     console.log(`Following user ${userId}`);

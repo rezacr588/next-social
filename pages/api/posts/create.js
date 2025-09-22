@@ -1,37 +1,35 @@
-import { run } from '../../../lib/db.js';
+import { run, query } from '../../../lib/db.js';
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Check for authentication (mock check)
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
+  // Very basic mock auth replaced with simple header-based user resolution (to be replaced with JWT)
+  const userIdHeader = req.headers['x-user-id'];
+  if (!userIdHeader) {
     return res.status(401).json({ error: 'Authentication required' });
   }
 
-  const { content, mediaUrl, mediaType } = req.body;
-
-  if (!content) {
+  const { content, mediaUrl, mediaType } = req.body || {};
+  if (!content || !content.trim()) {
     return res.status(400).json({ error: 'Content is required' });
   }
 
   try {
-    // Mock post creation
-    const newPost = {
-      id: Date.now().toString(),
-      user_id: 1,
-      content,
-      media_url: mediaUrl,
-      media_type: mediaType,
-      created_at: new Date().toISOString(),
-      username: 'Test User',
-      like_count: 0,
-      share_count: 0
-    };
+    const userRows = await query('SELECT id, username FROM users WHERE id = ? LIMIT 1', [userIdHeader]);
+    if (!userRows.length) {
+      return res.status(401).json({ error: 'Invalid user' });
+    }
+    const user = userRows[0];
 
-    res.status(201).json(newPost);
+    const result = await run(
+      'INSERT INTO posts (user_id, content, media_url, media_type) VALUES (?, ?, ?, ?)',
+      [user.id, content, mediaUrl || null, mediaType || 'text']
+    );
+
+    const created = await query('SELECT p.*, ? as username FROM posts p WHERE p.id = ?', [user.username, result.lastID]);
+    res.status(201).json(created[0]);
   } catch (error) {
     console.error('Create post error:', error);
     res.status(500).json({ error: 'Internal server error' });

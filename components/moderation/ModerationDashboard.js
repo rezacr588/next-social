@@ -15,13 +15,25 @@ const ModerationDashboard = () => {
   const fetchModerationData = async () => {
     try {
       setLoading(true);
+      setError(null);
+
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) {
+        setError("Admin access required. Please sign in with an administrator account to view moderation tools.");
+        return;
+      }
 
       // Fetch statistics
       const statsResponse = await fetch("/api/moderation?type=statistics", {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       });
+
+      if (statsResponse.status === 401 || statsResponse.status === 403) {
+        setError("Admin access required. Please sign in with an administrator account to view moderation tools.");
+        return;
+      }
 
       if (statsResponse.ok) {
         const statsData = await statsResponse.json();
@@ -31,9 +43,14 @@ const ModerationDashboard = () => {
       // Fetch appeals
       const appealsResponse = await fetch("/api/moderation?type=appeals", {
         headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
       });
+
+      if (appealsResponse.status === 401 || appealsResponse.status === 403) {
+        setError("Admin access required. Please sign in with an administrator account to view moderation tools.");
+        return;
+      }
 
       if (appealsResponse.ok) {
         const appealsData = await appealsResponse.json();
@@ -49,11 +66,17 @@ const ModerationDashboard = () => {
 
   const resolveAppeal = async (appealId, resolution) => {
     try {
+      const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+      if (!token) {
+        setError("Admin access required. Please sign in before resolving appeals.");
+        return;
+      }
+
       const response = await fetch("/api/moderation", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           action: "resolve_appeal",
@@ -75,6 +98,12 @@ const ModerationDashboard = () => {
   };
 
   const testModeration = async () => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+    if (!token) {
+      setError("Admin access required. Please sign in before running moderation tests.");
+      return;
+    }
+
     const testContents = [
       "This is a wonderful day!",
       "You are all idiots and this community sucks!",
@@ -89,7 +118,7 @@ const ModerationDashboard = () => {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             action: "analyze_text",

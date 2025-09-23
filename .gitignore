@@ -221,3 +221,27 @@ config/production.*
 set_api_key.sh
 *api_key*
 *.key
+
+# Test artifacts and reports
+test-results/
+playwright-report/
+coverage/
+*.lcov
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Demo and temporary files
+*demo*
+*TASK*
+*COMPLETION*
+*FIXES*

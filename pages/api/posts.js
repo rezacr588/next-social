@@ -1,83 +1,141 @@
-import { requireAuth } from '../middleware/auth.js';
-import { validationMiddleware } from '../middleware/validation.js';
-import { asyncHandler } from '../middleware/security.js';
-import { rateLimit } from '../middleware/rateLimit.js';
-import { postsService } from '../services/postsService.js';
-import { auditLogger } from '../middleware/logging.js';
+import { authenticateToken, optionalAuth } from '../../lib/middleware/auth.js';
+import { serverPostsService } from '../../lib/services/serverPostsService.js';
+import { 
+  successResponse, 
+  errorResponse, 
+  validationErrorResponse,
+  serverErrorResponse,
+  paginatedResponse,
+  methodNotAllowedResponse
+} from '../../lib/utils/apiResponse.js';
 
-const postValidation = {
-  content: { required: true, minLength: 1, maxLength: 5000 },
-  title: { maxLength: 200 },
-  tags: { maxLength: 500 },
+const validatePostData = (data) => {
+  const errors = [];
+  
+  if (!data.content || typeof data.content !== 'string') {
+    errors.push('Content is required');
+  } else if (data.content.trim().length === 0) {
+    errors.push('Content cannot be empty');
+  } else if (data.content.length > 5000) {
+    errors.push('Content cannot exceed 5000 characters');
+  }
+  
+  if (data.title && data.title.length > 200) {
+    errors.push('Title cannot exceed 200 characters');
+  }
+  
+  if (data.mediaUrl && !/^https?:\/\/.+/.test(data.mediaUrl)) {
+    errors.push('Media URL must be a valid HTTP/HTTPS URL');
+  }
+  
+  if (data.mediaType && !['text', 'image', 'video'].includes(data.mediaType)) {
+    errors.push('Media type must be one of: text, image, video');
+  }
+  
+  return errors;
 };
 
 const handler = async (req, res) => {
   if (req.method === 'GET') {
-    // Get posts feed
+    // Get posts feed (public endpoint with optional auth)
     try {
       const { 
         page = 1, 
         limit = 20,
-        sortBy = 'createdAt',
+        sortBy = 'created_at',
         sortOrder = 'desc',
         userId,
         tag,
         search
       } = req.query;
 
+      // Validate query parameters
+      const pageNum = parseInt(page);
+      const limitNum = Math.min(parseInt(limit), 50); // Max 50 posts per page
+      
+      if (pageNum < 1) {
+        return validationErrorResponse(res, ['Page must be a positive number']);
+      }
+      
+      if (limitNum < 1) {
+        return validationErrorResponse(res, ['Limit must be a positive number']);
+      }
+
       const options = {
-        page: parseInt(page),
-        limit: Math.min(parseInt(limit), 50),
-        sortBy,
-        sortOrder,
+        page: pageNum,
+        limit: limitNum,
+        sortBy: ['created_at', 'like_count', 'share_count'].includes(sortBy) ? sortBy : 'created_at',
+        sortOrder: ['asc', 'desc'].includes(sortOrder) ? sortOrder : 'desc',
         userId: userId ? parseInt(userId) : undefined,
         tag,
         search,
       };
 
-      const posts = await postsService.getAll(options);
-      res.json(posts);
+      const result = await serverPostsService.getAll(options);
+      
+      return paginatedResponse(
+        res, 
+        result.posts, 
+        result.pagination, 
+        'Posts retrieved successfully'
+      );
+      
     } catch (error) {
       console.error('Error fetching posts:', error);
-      res.status(500).json({ error: 'Failed to fetch posts' });
+      return serverErrorResponse(res, error);
     }
+    
   } else if (req.method === 'POST') {
-    // Create new post
-    const userId = req.user.id;
-
+    // Create new post (requires authentication)
     try {
-      const { content, title, tags, mediaUrl, mediaType } = req.body;
+      if (!req.user) {
+        return errorResponse(res, ['Authentication required'], 'Authentication failed', 401);
+      }
+
+      const { content, title, tags, mediaUrl, mediaType } = req.body || {};
+
+      // Validate input
+      const validationErrors = validatePostData({ content, title, mediaUrl, mediaType });
+      if (validationErrors.length > 0) {
+        return validationErrorResponse(res, validationErrors);
+      }
 
       const postData = {
-        content,
-        title,
-        tags: tags ? tags.split(',').map(tag => tag.trim()) : [],
+        content: content.trim(),
+        title: title?.trim(),
+        tags: tags ? tags.split(',').map(tag => tag.trim()).filter(Boolean) : [],
         mediaUrl,
-        mediaType,
-        userId,
+        mediaType: mediaType || 'text',
+        userId: req.user.id,
       };
 
-      const post = await postsService.create(postData);
+      const post = await serverPostsService.create(postData);
       
-      auditLogger('POST_CREATED', userId, { postId: post.id });
+      return successResponse(
+        res, 
+        { post }, 
+        'Post created successfully', 
+        201,
+        { createdBy: req.user.username }
+      );
       
-      res.status(201).json({ post });
     } catch (error) {
       console.error('Error creating post:', error);
-      res.status(500).json({ error: 'Failed to create post' });
+      return serverErrorResponse(res, error);
     }
+    
   } else {
-    res.setHeader('Allow', ['GET', 'POST']);
-    res.status(405).json({ error: 'Method not allowed' });
+    return methodNotAllowedResponse(res, ['GET', 'POST']);
   }
 };
 
-export default rateLimit()(
-  asyncHandler(async (req, res, next) => {
-    if (req.method === 'POST') {
-      return requireAuth(validationMiddleware(postValidation)(handler))(req, res, next);
-    } else {
-      return handler(req, res);
-    }
-  })
-);
+export default async function postsHandler(req, res) {
+  // Apply optional auth for GET requests, required auth for POST
+  if (req.method === 'GET') {
+    return optionalAuth(req, res, () => handler(req, res));
+  } else if (req.method === 'POST') {
+    return authenticateToken(req, res, () => handler(req, res));
+  } else {
+    return handler(req, res);
+  }
+}

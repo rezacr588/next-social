@@ -215,3 +215,9 @@ secret*
 *credential*
 config/secrets.*
 config/production.*
+
+# API keys and authentication
+.claude/
+set_api_key.sh
+*api_key*
+*.key
